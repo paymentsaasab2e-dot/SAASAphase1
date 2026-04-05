@@ -1,0 +1,67 @@
+services:
+  backend:
+    build:
+      context: ./BACKEND1_PROD
+      dockerfile: Dockerfile
+    env_file:
+      - ./BACKEND1_PROD/.env
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      FRONTEND_URL: https://${DOMAIN}
+      FRONTEND_URLS: https://${DOMAIN},https://www.${DOMAIN}
+    restart: unless-stopped
+    expose:
+      - "5000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "http=require('http');http.get('http://127.0.0.1:5000/health',res=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./FRONTEND1_PROD
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: /api/proxy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: /api/proxy
+      BACKEND_INTERNAL_URL: http://backend:5000/api
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    depends_on:
+      frontend:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+    env_file:
+      - ./.env.caddy
+    environment:
+      ACME_AGREE: "true"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
